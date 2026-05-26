@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班級積分兌換中心</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (讓瀏覽器能看懂 JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+        
+        @keyframes slideIn {
+          from { transform: translateX(100%) translateY(0); opacity: 0; }
+          to { transform: translateX(0) translateY(0); opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          @keyframes slideIn {
+            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+          }
+        }
+        .animate-slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        
+        @keyframes bounceSlow {
+          0%, 100% { transform: translateY(-5%); }
+          50% { transform: translateY(5%); }
+        }
+        .animate-bounce-slow { animation: bounceSlow 3s ease-in-out infinite; }
+        
+        @keyframes popIn {
+          0% { transform: scale(0.95); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .animation-pop { animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        function App() {
+            // ⚠️ 您的 GAS 網址
+            const GAS_URL = "https://script.google.com/macros/s/AKfycbwxMLyG7Y_gdCRqW5ApjGgvmouJl6X7LR85di3LuFpUbYgE176iv8pA5XykkqINWU_pGw/exec"; 
+            
+            const mockStudents = [
+                { id: '1', seatNumber: 1, name: '卞佳浤', points: 155, history: ['免短文', '免日記', '免日記', '免午休'] },
+                { id: '2', seatNumber: 2, name: '孫宇辰', points: 1434, history: ['午休戶外區', '免日記', '午休戶外區', '免日記', '免日記', '午休戶外區', '免午休', '免日記', '免日記', '免午休', '免午休'] },
+                { id: '3', seatNumber: 3, name: '徐旭辰', points: 116, history: ['午休戶外區', '午休戶外區', '免日記', '免短文', '免午休'] },
+                { id: '4', seatNumber: 4, name: '王琮凱', points: 448, history: ['午休戶外區', '免日記', '午休戶外區', '午休戶外區', '免午休', '免午休', '免日記', '免午休', '免午休', '免午休'] },
+                { id: '5', seatNumber: 5, name: '賴顗安', points: 2753, history: ['午休戶外區', '午休戶外區', '免午休', '免午休', '午休戶外區', '免午休', '免午休'] }
+            ];
+
+            const [students, setStudents] = useState([]);
+            const [selectedStudentId, setSelectedStudentId] = useState('');
+            const [history, setHistory] = useState([]); 
+            const [notification, setNotification] = useState(null);
+            const [deleteTarget, setDeleteTarget] = useState(null);
+            
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [lastSyncTime, setLastSyncTime] = useState(null);
+            const [isMockMode, setIsMockMode] = useState(false);
+            const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+            const notificationTimerRef = useRef(null);
+            const currentStudent = students.find(s => String(s.id) === String(selectedStudentId));
+
+            const rewards = [
+                { 
+                    id: 1, name: '免日記', cost: 500, desc: '今天不用寫日記一次，太棒了！',
+                    image: 'https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=600&auto=format&fit=crop', 
+                    icon: 'fas fa-book-open', color: 'bg-blue-50', iconColor: 'text-blue-500'
+                },
+                { 
+                    id: 2, name: '免午休', cost: 200, desc: '午休時間可以安靜地做自己喜歡的事。',
+                    image: 'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?q=80&w=600&auto=format&fit=crop', 
+                    icon: 'fas fa-mug-hot', color: 'bg-orange-50', iconColor: 'text-orange-500'
+                },
+                { 
+                    id: 3, name: '免短文', cost: 1500, desc: '恭喜！這次的短文作業可以跳過。',
+                    image: 'https://images.unsplash.com/photo-1529651737248-dad5e287768e?q=80&w=600&auto=format&fit=crop', 
+                    icon: 'fas fa-file-alt', color: 'bg-purple-50', iconColor: 'text-purple-500'
+                },
+                { 
+                    id: 4, name: '午休沙發區', cost: 350, desc: '午休時可以去超舒服的沙發區休息。',
+                    image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?q=80&w=600&auto=format&fit=crop', 
+                    icon: 'fas fa-couch', color: 'bg-pink-50', iconColor: 'text-pink-500'
+                },
+                { 
+                    id: 5, name: '午休戶外區', cost: 350, desc: '午休時間可以在走廊看看小花園，舒適的休息。',
+                    image: 'https://images.unsplash.com/photo-1563604332833-286847849495?q=80&w=600&auto=format&fit=crop', 
+                    icon: 'fas fa-tree', color: 'bg-green-50', iconColor: 'text-green-500'
+                },
+            ];
+
+            const showNotification = (message, type = 'success') => {
+                setNotification({ message, type });
+                if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current);
+                notificationTimerRef.current = setTimeout(() => setNotification(null), 4000);
+            };
+
+            const fetchFromCloud = async () => {
+                if (!GAS_URL) return; 
+                setIsSyncing(true);
+                try {
+                    const timestamp = new Date().getTime();
+                    const fetchUrl = `${GAS_URL}?t=${timestamp}`;
+                    const response = await fetch(fetchUrl, { method: 'GET', cache: 'no-store' });
+                    
+                    const textData = await response.text();
+                    let result;
+                    try { result = JSON.parse(textData); } catch (e) { throw new Error('GAS 回傳格式錯誤'); }
+                    
+                    if (result.status === 'success' && (result.students || result.data)) {
+                        const sourceData = result.students || result.data;
+                        const newStudents = sourceData.map(item => ({
+                            id: `${item.seatNumber}-${item.name}`,
+                            seatNumber: parseInt(item.seatNumber),
+                            name: String(item.name).trim(),
+                            points: Number(item.points),
+                            history: Array.isArray(item.history) ? item.history : String(item.history || '').trim().split(/[;,]/).filter(Boolean)
+                        }));
+                        
+                        newStudents.sort((a, b) => a.seatNumber - b.seatNumber);
+                        setStudents(newStudents);
+                        if(newStudents.length > 0 && !selectedStudentId) setSelectedStudentId(newStudents[0].id);
+                        
+                        setLastSyncTime(new Date().toLocaleTimeString());
+                        setIsMockMode(false);
+                        setHasUnsavedChanges(false); 
+                        showNotification('已成功從雲端載入最新資料', 'success');
+                    } else { throw new Error('資料格式不正確'); }
+                } catch (error) {
+                    console.warn("API 讀取失敗:", error);
+                    setStudents(mockStudents);
+                    if(!selectedStudentId) setSelectedStudentId(String(mockStudents[0].id));
+                    setIsMockMode(true);
+                    setLastSyncTime(new Date().toLocaleTimeString());
+                    showNotification(`載入失敗，已切換至預覽模式。`, 'error');
+                } finally { setIsSyncing(false); }
+            };
+
+            const saveToCloud = async () => {
+                if (!GAS_URL || isMockMode || !hasUnsavedChanges) return; 
+                setIsSyncing(true);
+                try {
+                    const payload = students.map(s => ({
+                        seatNumber: s.seatNumber,
+                        name: s.name,
+                        points: s.points,
+                        history: s.history && s.history.length > 0 ? s.history.join(';') : ''
+                    }));
+
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ students: payload }),
+                        redirect: 'follow'
+                    });
+                    
+                    const responseText = await response.text();
+                    let result;
+                    try { result = JSON.parse(responseText); } catch (e) { throw new Error('權限阻擋，請確認 GAS 設定。'); }
+                    
+                    if (result.status === 'success') {
+                        setLastSyncTime(new Date().toLocaleTimeString());
+                        setHasUnsavedChanges(false); 
+                        showNotification('資料已成功儲存至雲端！', 'success');
+                    } else { throw new Error(result.message || '儲存失敗'); }
+                } catch (error) {
+                    showNotification(`儲存失敗: ${error.message}`, 'error');
+                } finally { setIsSyncing(false); }
+            };
+
+            useEffect(() => {
+                fetchFromCloud();
+                return () => { if (notificationTimerRef.current) clearTimeout(notificationTimerRef.current); };
+            }, []);
+
+            const handleRedeem = (reward) => {
+                if (!currentStudent) return showNotification('請先選擇學生！', 'error');
+                if (currentStudent.points >= reward.cost) {
+                    const updatedStudents = students.map(s => s.id === currentStudent.id ? { ...s, points: s.points - reward.cost, history: [...(s.history || []), reward.name] } : s);
+                    setStudents(updatedStudents);
+                    setHasUnsavedChanges(true); 
+                    setHistory(prev => [{ id: Date.now(), studentId: currentStudent.id, seatNumber: currentStudent.seatNumber, studentName: currentStudent.name, name: reward.name, cost: reward.cost, time: new Date().toLocaleTimeString(), type: 'redeem' }, ...prev]);
+                    showNotification(`兌換成功！`, 'success');
+                } else { showNotification('積分不足！', 'error'); }
+            };
+
+            const handleAddPoints = () => {
+                if (!currentStudent) return;
+                setStudents(students.map(s => s.id === currentStudent.id ? { ...s, points: s.points + 100 } : s));
+                setHasUnsavedChanges(true);
+                setHistory(prev => [{ id: Date.now(), studentId: currentStudent.id, seatNumber: currentStudent.seatNumber, studentName: currentStudent.name, name: '加分', cost: 100, time: new Date().toLocaleTimeString(), type: 'earn' }, ...prev]);
+                showNotification(`獲得 100 積分！`, 'success');
+            };
+
+            const confirmDelete = () => {
+                if (!deleteTarget) return;
+                const record = deleteTarget;
+                const updatedStudents = students.map(s => {
+                    if (s.id === record.studentId || (s.seatNumber === record.seatNumber && s.name === record.studentName)) {
+                        let newPoints = Number(s.points);
+                        let newHistory = [...(s.history || [])];
+                        if (record.type === 'redeem') {
+                            newPoints += Number(record.cost);
+                            const itemIndex = newHistory.lastIndexOf(record.name); 
+                            if (itemIndex > -1) newHistory.splice(itemIndex, 1);
+                        } else { newPoints -= Number(record.cost); }
+                        return { ...s, points: newPoints, history: newHistory };
+                    }
+                    return s;
+                });
+                setStudents(updatedStudents);
+                setHasUnsavedChanges(true);
+                setHistory(prev => prev.filter(r => r.id !== record.id));
+                showNotification('已刪除並復原積分', 'success');
+                setDeleteTarget(null);
+            };
+
+            return (
+                <div className="h-screen flex flex-col font-sans p-2 md:p-4 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] overflow-hidden text-gray-800">
+                    {/* Header */}
+                    <header className="shrink-0 mb-3 flex flex-col md:flex-row justify-between items-center gap-2 bg-white/90 backdrop-blur-md p-3 px-5 rounded-2xl shadow-sm border border-indigo-100 z-10">
+                        <div className="flex items-center gap-3">
+                            <span className="text-3xl">🎁</span> 
+                            <h1 className="text-2xl font-extrabold text-indigo-800 tracking-tight">班級積分兌換中心</h1>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {isMockMode && <span className="text-xs bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full font-bold animate-pulse shadow-sm">預覽模式</span>}
+                            {hasUnsavedChanges && !isMockMode && <span className="text-xs bg-red-100 text-red-600 px-3 py-1.5 rounded-full font-bold animate-pulse shadow-sm">🔴 有未儲存的變更</span>}
+                            {lastSyncTime && !isMockMode && !hasUnsavedChanges && <span className="text-xs font-bold text-gray-500 hidden sm:inline-block">已同步 ({lastSyncTime})</span>}
+                            
+                            <button onClick={saveToCloud} disabled={isSyncing || !hasUnsavedChanges} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm font-bold shadow-sm ${!hasUnsavedChanges ? 'bg-gray-100 text-gray-400' : 'bg-blue-500 text-white hover:bg-blue-600'}`}>
+                                <i className={`fas fa-save ${isSyncing && hasUnsavedChanges ? "fa-beat" : ""}`}></i> {isSyncing && hasUnsavedChanges ? '儲存中...' : '儲存變更'}
+                            </button>
+                            <button onClick={fetchFromCloud} disabled={isSyncing || hasUnsavedChanges} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-sm font-bold shadow-sm ${isSyncing || hasUnsavedChanges ? 'bg-gray-200 text-gray-400' : 'bg-indigo-500 text-white hover:bg-indigo-600'}`}>
+                                <i className={`fas fa-sync-alt ${isSyncing && !hasUnsavedChanges ? "fa-spin" : ""}`}></i> 重新載入
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main */}
+                    <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0">
+                        {/* Sidebar */}
+                        <div className="w-full md:w-1/3 flex flex-col gap-3 min-h-0">
+                            <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-1 pb-2 custom-scrollbar">
+                                {/* Select Student */}
+                                <div className="bg-white/95 rounded-2xl p-4 shadow-sm border border-indigo-100 shrink-0">
+                                    <label className="block text-sm font-bold text-indigo-900 mb-2 flex items-center gap-2">
+                                        <i className="fas fa-users text-indigo-500"></i> 我是誰？ (選擇座號)
+                                    </label>
+                                    <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)} className="w-full p-3 border-2 border-indigo-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:outline-none bg-indigo-50/50 text-lg font-bold text-indigo-900 cursor-pointer transition-colors">
+                                        <option value="" disabled>-- 請選擇 --</option>
+                                        {students.map(s => <option key={s.id} value={s.id}>{String(s.seatNumber).padStart(2, '0')}. {s.name}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Points */}
+                                <div className={`rounded-2xl p-5 shadow-sm border-2 transition-all shrink-0 relative overflow-hidden ${currentStudent ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-300' : 'bg-white border-gray-200'}`}>
+                                    {currentStudent && <div className="absolute top-0 right-0 p-4 opacity-10"><i className="fas fa-coins text-7xl"></i></div>}
+                                    <div className="flex items-center gap-4 mb-4 relative z-10">
+                                        <div className={`p-3 px-4 rounded-full ${currentStudent ? 'bg-yellow-400 text-yellow-900 shadow-sm' : 'bg-gray-100 text-gray-400'}`}>
+                                            <i className={`fas fa-coins text-2xl ${currentStudent ? 'animate-bounce-slow' : ''}`}></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-500">{currentStudent ? `${currentStudent.name} 的超級積分` : '尚未選擇學生'}</p>
+                                            <h2 className={`text-5xl font-extrabold tabular-nums tracking-tight ${currentStudent ? 'text-yellow-600' : 'text-gray-300'}`}>{currentStudent ? currentStudent.points.toLocaleString() : '---'}</h2>
+                                        </div>
+                                    </div>
+                                    <button onClick={handleAddPoints} disabled={!currentStudent || isSyncing} className={`w-full py-3 rounded-xl font-bold flex justify-center items-center gap-2 transition-all relative z-10 ${currentStudent && !isSyncing ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                                        <i className="fas fa-plus-circle"></i> 老師加分 (+100)
+                                    </button>
+                                </div>
+
+                                {/* Inventory */}
+                                {currentStudent && (
+                                    <div className="bg-indigo-50/80 rounded-2xl p-4 border border-indigo-100 shrink-0">
+                                        <h4 className="text-xs font-bold text-indigo-700 mb-2 flex items-center gap-1.5"><i className="fas fa-shopping-bag"></i> 百寶箱 (已兌換)</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {currentStudent.history?.length ? currentStudent.history.map((item, idx) => <span key={idx} className="text-xs bg-white border border-indigo-200 text-indigo-700 px-2.5 py-1 rounded-md font-bold">{item}</span>) : <span className="text-xs text-indigo-400/80 italic">背包空空的</span>}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* History */}
+                                <div className="bg-white/95 rounded-2xl shadow-sm border border-indigo-100 flex flex-col flex-1 min-h-[200px]">
+                                    <div className="p-3 border-b border-indigo-50 flex justify-between items-center bg-indigo-50/40 rounded-t-2xl">
+                                        <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2"><i className="fas fa-history text-indigo-500"></i> 操作動態</h3>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                                        {history.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-2 min-h-[150px]"><i className="fas fa-history text-3xl opacity-50"></i><p className="text-xs">尚無紀錄</p></div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {history.map(record => (
+                                                    <div key={record.id} className="flex justify-between items-center p-2.5 bg-white hover:bg-slate-50 rounded-xl border border-gray-100 group">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-2 rounded-full shrink-0 ${record.type === 'redeem' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-500'}`}>
+                                                                <i className={record.type === 'redeem' ? 'fas fa-shopping-bag text-xs' : 'fas fa-plus text-xs'}></i>
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-baseline gap-1.5"><span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-1 rounded">{String(record.seatNumber).padStart(2, '0')}</span><span className="text-sm font-bold text-gray-700">{record.studentName}</span></div>
+                                                                <div className="text-xs text-gray-500">{record.type === 'redeem' ? '兌換了' : '獲得了'} <span className="text-indigo-600 font-bold">{record.name}</span></div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`font-bold text-sm tabular-nums ${record.type === 'redeem' ? 'text-red-500' : 'text-green-600'}`}>{record.type === 'redeem' ? '-' : '+'}{record.cost}</span>
+                                                            <button onClick={() => setDeleteTarget(record)} className="text-gray-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg opacity-0 group-hover:opacity-100"><i className="fas fa-trash-alt"></i></button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Store */}
+                        <div className="w-full md:w-2/3 bg-white/90 backdrop-blur-md rounded-3xl border border-indigo-100 flex flex-col overflow-hidden shadow-sm">
+                            <div className="p-4 md:p-5 border-b border-indigo-50 flex justify-between items-center bg-white/50 z-10">
+                                <h3 className="text-xl font-extrabold text-indigo-900 flex items-center gap-2"><span className="text-2xl">🎉</span> 獎勵兌換商城</h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar bg-slate-50/50">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                    {rewards.map(reward => {
+                                        const canAfford = currentStudent && currentStudent.points >= reward.cost;
+                                        return (
+                                            <button key={reward.id} onClick={() => canAfford && handleRedeem(reward)} disabled={(!canAfford && !!currentStudent) || isSyncing} className={`relative group bg-white rounded-2xl shadow-sm border-2 transition-all text-left flex flex-col ${canAfford ? 'border-transparent hover:border-indigo-300 hover:-translate-y-1 hover:shadow-xl' : currentStudent ? 'border-gray-100 opacity-60 grayscale cursor-not-allowed' : 'border-transparent hover:-translate-y-1'}`}>
+                                                <div className="relative h-40 overflow-hidden bg-gray-100 flex-shrink-0">
+                                                    <img src={reward.image} alt={reward.name} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                                    <div className={`absolute inset-0 flex items-center justify-center ${reward.color} mix-blend-multiply opacity-80`}></div>
+                                                    <div className="absolute inset-0 flex items-center justify-center drop-shadow-md text-5xl transition-transform group-hover:scale-110"><i className={`${reward.icon} ${reward.iconColor}`}></i></div>
+                                                    <div className="absolute top-3 right-3 bg-yellow-400 text-yellow-900 text-sm font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 shadow"><i className="fas fa-coins"></i> {reward.cost}</div>
+                                                </div>
+                                                <div className="p-4 flex-1 flex flex-col justify-between">
+                                                    <div><h4 className="text-lg font-extrabold text-gray-800 mb-1">{reward.name}</h4><p className="text-gray-500 text-xs font-medium">{reward.desc}</p></div>
+                                                    <div className={`mt-4 py-2.5 rounded-xl font-bold text-center text-sm ${!currentStudent ? 'bg-indigo-50 text-indigo-500' : canAfford ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400'}`}>{!currentStudent ? '請先選擇座號' : canAfford ? '立即兌換' : `還差 ${reward.cost - currentStudent.points} 分`}</div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Toast */}
+                    {notification && (
+                        <div className={`fixed top-6 right-1/2 translate-x-1/2 md:translate-x-0 md:right-6 p-4 rounded-2xl shadow-xl flex items-center gap-3 animate-slide-in z-50 border-2 backdrop-blur-md ${notification.type === 'success' ? 'bg-green-50/95 border-green-200 text-green-800' : 'bg-red-50/95 border-red-200 text-red-800'}`}>
+                            <div className={`p-2 rounded-full ${notification.type === 'success' ? 'bg-green-200 text-green-700' : 'bg-red-200 text-red-700'}`}><i className={`fas ${notification.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} text-lg`}></i></div>
+                            <span className="font-bold text-sm tracking-wide">{notification.message}</span>
+                        </div>
+                    )}
+
+                    {/* Modal */}
+                    {deleteTarget && (
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full border border-indigo-100 animation-pop">
+                                <h3 className="text-xl font-extrabold text-gray-800 mb-4 flex items-center gap-2"><i className="fas fa-exclamation-triangle text-red-500"></i> 刪除確認</h3>
+                                <p className="text-gray-600 mb-5 text-sm">確定要刪除這筆紀錄嗎？積分將會自動復原。</p>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 rounded-xl font-bold bg-gray-100 hover:bg-gray-200">取消</button>
+                                    <button onClick={confirmDelete} className="flex-1 py-3 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600">確定刪除</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
