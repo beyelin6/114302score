@@ -16,7 +16,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
     <!-- Babel (讓瀏覽器能看懂 JSX) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.8/babel.min.js"></script>
 
     <style>
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
@@ -52,7 +52,7 @@
 <body class="bg-gray-50">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
         const { useState, useRef, useEffect } = React;
 
         function App() {
